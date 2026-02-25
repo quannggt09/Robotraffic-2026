@@ -3,7 +3,7 @@
 // IR Sensors
 const int IR_RECV = 7; // để làm j v?
 const int LINE_OUTS[5] = {2, 3, 4, 5, 6};
-int sensor_values[5]
+int sensor_values[5];
 
 // Servo
 const int SERVO_PIN = A2;
@@ -68,9 +68,6 @@ void setup() {
 }
 
 void loop() {
-  line_outs_values();
-  calculate_pid();
-  steering_angle_calculator();
   unsigned long currentTime = millis();
 
   int irStatus = digitalRead(IR_RECV);
@@ -84,15 +81,22 @@ void loop() {
   Serial.print(" | Speed: ");
   Serial.println(currentSpeed);
 
-  // Thiếu Điều khiển Servo và Điều khiển Motor
-
+  // Thiếu Điều khiển Motor
   line_outs_values();
   calculate_pid();
-  
+  int pulse = map(SteeringAngle(), -20, 20, 2000, 1000);
+  servo.write(pulse); // đổi từ steering angle qua xung // Đổi 2250, 750 -> 2000, 1000
+
+  Serial.print("Error: ");
+  Serial.print(error);
+  Serial.print(" | PID: ");
+  Serial.print(PID_value);
+  Serial.print(" | Pulse: ");
+  Serial.println(pulse);
 }
 
 void line_outs_values() {
-  for(int i=0;i<5;i++){
+  for(int i=0; i<5; i++){
     sensor_values[i] = digitalRead(LINE_OUTS[i]);
 }
 
