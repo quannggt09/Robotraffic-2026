@@ -14,6 +14,10 @@ unsigned long lastMoveTime = 0;
 const int moveInterval = 15;
 const int minServoAngle = 40;
 const int maxServoAngle = 140;
+int currentAngle = 0;
+int zero_degree = 1200;
+int maxSteeringPulse = 1800;
+int minSteeringPulse = 750;
 //duong trai am phai
 
 // Motors
@@ -26,7 +30,7 @@ const int enA = 9;
 // Motor Timing & Logic
 unsigned long lastMotorTime = 0;
 const int motorInterval = 300; // How fast the speed ramps up
-int currentSpeed = 100;
+int Speed = 200;
 bool goingForward = true;
 
 //PID
@@ -35,8 +39,7 @@ float previous_error = 0;
 float P = 0;
 float I = 0;
 float D = 0;
-// Tuning by chatgpt =))))))
-float Kp = 1.5;
+float Kp = 5.5;
 float Ki = 0.0;
 float Kd = 8.0;
 float PID_value = 0;
@@ -50,7 +53,7 @@ void setup() {
 
   pinMode(IR_RECV, INPUT); 
   servo.attach(SERVO_PIN);
-  servo.write(1500); // xung 1500ums = góc 90 độ
+  servo.write(zero_degree); // xung 1500ums = góc 90 độ
 
   for (int i = 0; i < 5; i++) {
     pinMode(LINE_OUTS[i], INPUT); //khai báo các chân IR
@@ -79,13 +82,21 @@ void loop() {
     if (i < 4) Serial.print(",");
   }
   Serial.print(" | Speed: ");
-  Serial.println(currentSpeed);
+  Serial.println(Speed);
 
   // Thiếu Điều khiển Motor
   line_outs_values();
   calculate_pid();
-  int pulse = map(SteeringAngle(), -20, 20, 2000, 1000);
+  currentAngle = SteeringAngle();
+  int pulse = map(currentAngle, -20, 20, maxSteeringPulse, minSteeringPulse); // actual range: 750 -> 2250
   servo.write(pulse); // đổi từ steering angle qua xung // Đổi 2250, 750 -> 2000, 1000
+
+  //Motor writing
+  digitalWrite(motorA1, LOW);
+  digitalWrite(motorA2, HIGH);
+  digitalWrite(motorB1, LOW);
+  digitalWrite(motorB2, HIGH);
+  analogWrite(enA, Speed);
 
   Serial.print("Error: ");
   Serial.print(error);
@@ -100,7 +111,7 @@ void line_outs_values() {
     sensor_values[i] = digitalRead(LINE_OUTS[i]);
 }
 
-  int weights[5] = {-4, -2, 0, 2, 4};
+  int weights[5] = {-6, -3, 0, 3, 6};
   int sum = 0;
   int active = 0;
 
