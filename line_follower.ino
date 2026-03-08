@@ -30,7 +30,7 @@ const int enA = 9;
 // Motor Timing & Logic
 unsigned long lastMotorTime = 0;
 const int motorInterval = 300; // How fast the speed ramps up
-int Speed = 200;
+int Speed = 250;
 bool goingForward = true;
 
 //PID
@@ -41,7 +41,7 @@ float I = 0;
 float D = 0;
 float Kp = 5.5;
 float Ki = 0.0;
-float Kd = 8.0;
+float Kd = 22.0;
 float PID_value = 0;
 
 float angle = 0;
