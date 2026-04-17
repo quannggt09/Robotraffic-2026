@@ -1,4 +1,3 @@
-
 #include <IRremote.hpp>
 
 // ----------------- Visible LEDs -----------------
@@ -13,18 +12,11 @@ const unsigned long TIME_GREEN       = 10000;
 const unsigned long TIME_GREEN_FLASH = 2000;
 const unsigned long TIME_YELLOW      = 3000;
 
-const unsigned long GREEN_FLASH_TOGGLE_MS = 300;   // blink speed
-const unsigned long IR_SEND_PERIOD_MS     = 120;   // how often to broadcast state
+const unsigned long GREEN_FLASH_TOGGLE_MS = 300;
+const unsigned long IR_SEND_PERIOD_MS     = 300; // more stable
 
 // ----------------- IR settings -----------------
-const uint8_t IR_SEND_PIN = 3; // Uno recommended with IRremote
-
-// Simple "message" codes (pick any distinct values you like)
-const uint32_t IR_CODE_RED         = 0xA1B2C301;
-const uint32_t IR_CODE_RED_YELLOW  = 0xA1B2C302;
-const uint32_t IR_CODE_GREEN       = 0xA1B2C303;
-const uint32_t IR_CODE_GREEN_FLASH = 0xA1B2C304;
-const uint32_t IR_CODE_YELLOW      = 0xA1B2C305;
+const uint8_t IR_SEND_PIN = 3;
 
 // ----------------- State machine -----------------
 enum LightState {
@@ -43,56 +35,58 @@ bool greenFlashOn = false;
 
 unsigned long lastIrSendMs = 0;
 
-void allOff() {
-  digitalWrite(RED_PIN, LOW);
-  digitalWrite(YELLOW_PIN, LOW);
-  digitalWrite(GREEN_PIN, LOW);
-}
-
-uint32_t codeForState(LightState s) {
+// ----------------- STATE → CODE -----------------
+uint8_t codeForState(LightState s) {
   switch (s) {
-    case S_RED:         return IR_CODE_RED;
-    case S_RED_YELLOW:  return IR_CODE_RED_YELLOW;
-    case S_GREEN:       return IR_CODE_GREEN;
-    case S_GREEN_FLASH: return IR_CODE_GREEN_FLASH;
-    case S_YELLOW:      return IR_CODE_YELLOW;
+    case S_RED:         return 0;
+    case S_RED_YELLOW:  return 1;
+    case S_GREEN:       return 2;
+    case S_GREEN_FLASH: return 3;
+    case S_YELLOW:      return 4;
     default:            return 0;
   }
 }
 
+// ----------------- LED CONTROL -----------------
 void setLedsForState(LightState s, unsigned long nowMs) {
-  // Default: ensure deterministic LED outputs
-  allOff();
-
   switch (s) {
     case S_RED:
       digitalWrite(RED_PIN, HIGH);
+      digitalWrite(YELLOW_PIN, LOW);
+      digitalWrite(GREEN_PIN, LOW);
       break;
 
     case S_RED_YELLOW:
       digitalWrite(RED_PIN, HIGH);
       digitalWrite(YELLOW_PIN, HIGH);
+      digitalWrite(GREEN_PIN, LOW);
       break;
 
     case S_GREEN:
+      digitalWrite(RED_PIN, LOW);
+      digitalWrite(YELLOW_PIN, LOW);
       digitalWrite(GREEN_PIN, HIGH);
       break;
 
     case S_GREEN_FLASH:
-      // Non-blocking blinking
       if (nowMs - lastFlashToggleMs >= GREEN_FLASH_TOGGLE_MS) {
         lastFlashToggleMs = nowMs;
         greenFlashOn = !greenFlashOn;
       }
+      digitalWrite(RED_PIN, LOW);
+      digitalWrite(YELLOW_PIN, LOW);
       digitalWrite(GREEN_PIN, greenFlashOn ? HIGH : LOW);
       break;
 
     case S_YELLOW:
+      digitalWrite(RED_PIN, LOW);
       digitalWrite(YELLOW_PIN, HIGH);
+      digitalWrite(GREEN_PIN, LOW);
       break;
   }
 }
 
+// ----------------- STATE TRANSITION -----------------
 void advanceStateIfNeeded(unsigned long nowMs) {
   unsigned long elapsed = nowMs - stateStartMs;
 
@@ -136,42 +130,35 @@ void advanceStateIfNeeded(unsigned long nowMs) {
   }
 }
 
+// ----------------- IR SENDING -----------------
 void sendIrStateIfNeeded(unsigned long nowMs) {
   if (nowMs - lastIrSendMs >= IR_SEND_PERIOD_MS) {
     lastIrSendMs = nowMs;
 
-    // NEC: common + easy to decode. This call is short; no delay().
-    // Address can be any 16-bit value; command is 8-bit (we'll hash the state).
-    uint32_t code = codeForState(state);
-
     uint16_t address = 0x1234;
-    uint8_t command  = (uint8_t)(code & 0xFF);
+    uint8_t command  = codeForState(state);
 
-    IrSender.sendNEC(address, command, 0); // repeats=0
+    IrSender.sendNEC(address, command, 0);
   }
 }
 
+// ----------------- SETUP -----------------
 void setup() {
   pinMode(RED_PIN, OUTPUT);
   pinMode(YELLOW_PIN, OUTPUT);
   pinMode(GREEN_PIN, OUTPUT);
-  allOff();
 
-  // IRremote setup
-  IrSender.begin(IR_SEND_PIN, ENABLE_LED_FEEDBACK); // LED feedback optional
+  IrSender.begin(IR_SEND_PIN, ENABLE_LED_FEEDBACK);
 
   state = S_RED;
   stateStartMs = millis();
 }
 
+// ----------------- LOOP -----------------
 void loop() {
   unsigned long nowMs = millis();
 
   advanceStateIfNeeded(nowMs);
   setLedsForState(state, nowMs);
-
-  // Broadcast the current light state over IR
   sendIrStateIfNeeded(nowMs);
-
-  // No delay() anywhere; loop runs fast.
 }
