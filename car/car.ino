@@ -1,7 +1,9 @@
 #include <ServoTimer2.h>
 
-const int IR_RECV = 7;
+// IR Sensors
+const int IR_RECV = 7; // để làm j v?
 const int LINE_OUTS[5] = {2, 3, 4, 5, 6};
+int sensor_values[5];
 
 // Servo
 const int SERVO_PIN = A2;
@@ -10,8 +12,13 @@ int servoPos = 90;
 int servoStep = 2; // Reduced step for smoother motion
 unsigned long lastMoveTime = 0; 
 const int moveInterval = 15;
-const int minAngle = 40;
-const int maxAngle = 140;
+const int minServoAngle = 40;
+const int maxServoAngle = 140;
+int currentAngle = 0;
+int zero_degree = 1200;
+int maxSteeringPulse = 1800;
+int minSteeringPulse = 750;
+//duong trai am phai
 
 // Motors
 const int motorA1 = 10;
@@ -23,18 +30,33 @@ const int enA = 9;
 // Motor Timing & Logic
 unsigned long lastMotorTime = 0;
 const int motorInterval = 300; // How fast the speed ramps up
-int currentSpeed = 100;
+int Speed = 200;
 bool goingForward = true;
+
+//PID
+float error = 0;
+float previous_error = 0;
+float P = 0;
+float I = 0;
+float D = 0;
+float Kp = 5.5;
+float Ki = 0.0;
+float Kd = 22.0;
+float PID_value = 0;
+
+float angle = 0;
+int last_angle = 0;
+const int maxSteeringAngle = 20;
 
 void setup() {
   Serial.begin(9600);
 
-  pinMode(IR_RECV, INPUT);
+  pinMode(IR_RECV, INPUT); 
   servo.attach(SERVO_PIN);
-  servo.write(1500);
+  servo.write(zero_degree); // xung 1500ums = góc 90 độ
 
   for (int i = 0; i < 5; i++) {
-    pinMode(LINE_OUTS[i], INPUT);
+    pinMode(LINE_OUTS[i], INPUT); //khai báo các chân IR
   }
 
   // Initialize Motor Pins
@@ -51,64 +73,85 @@ void setup() {
 void loop() {
   unsigned long currentTime = millis();
 
-  // --- 1. SENSOR LOGGING ---
-  // (Optional: Wrap in a timer if it scrolls too fast)
   int irStatus = digitalRead(IR_RECV);
-  Serial.print("IR: "); Serial.print(irStatus);
+  Serial.print("IR: ");
+  Serial.print(irStatus);
   Serial.print(" | Line: ");
   for (int i = 0; i < 5; i++) {
     Serial.print(digitalRead(LINE_OUTS[i]));
     if (i < 4) Serial.print(",");
   }
-  Serial.print(" | Speed: "); Serial.println(currentSpeed);
+  Serial.print(" | Speed: ");
+  Serial.println(Speed);
 
-  // --- 2. SERVO SWEEP (Non-blocking) ---
-  if (currentTime - lastMoveTime >= moveInterval) {
-    lastMoveTime = currentTime;
-    servoPos += servoStep;
-    if (servoPos >= maxAngle || servoPos <= minAngle) {
-      servoStep = -servoStep; 
+  // Thiếu Điều khiển Motor
+  line_outs_values();
+  calculate_pid();
+  currentAngle = SteeringAngle();
+  int pulse = map(currentAngle, -20, 20, maxSteeringPulse, minSteeringPulse); // actual range: 750 -> 2250
+  servo.write(pulse); // đổi từ steering angle qua xung // Đổi 2250, 750 -> 2000, 1000
+
+  //Motor writing
+  if (!irStatus){
+    Speed = 0;
+    Serial.println("STOP");
+  }
+  else {
+    Speed = 200;
+    Serial.println("GO");
+  }
+  digitalWrite(motorA1, LOW);
+  digitalWrite(motorA2, HIGH);
+  digitalWrite(motorB1, LOW);
+  digitalWrite(motorB2, HIGH);
+  analogWrite(enA, Speed);
+
+
+  // Serial.print("Error: ");
+  // Serial.print(error);
+  // Serial.print(" | PID: ");
+  // Serial.print(PID_value);
+  // Serial.print(" | Pulse: ");
+  // Serial.println(pulse);
+}
+
+void line_outs_values() {
+  for(int i=0; i<5; i++){
+    sensor_values[i] = digitalRead(LINE_OUTS[i]);
+}
+
+  int weights[5] = {-6, -3, 0, 3, 6};
+  int sum = 0;
+  int active = 0;
+
+  for (int i = 0; i < 5; i++) {
+    if (sensor_values[i] == 1) {
+      sum += weights[i];
+      active++;
     }
-    servo.write(map(servoPos, 0, 180, 750, 2250));
   }
 
-  // --- 3. MOTOR TEST (Slow to Fast, Forward then Backward) ---
-  if (currentTime - lastMotorTime >= motorInterval) {
-    lastMotorTime = currentTime;
-
-    // Increment speed
-    currentSpeed += 5;
-
-    // When max speed reached, flip direction and reset
-    if (currentSpeed > 255) {
-      delay(500);
-      currentSpeed = 100;
-      goingForward = !goingForward;
-      Serial.println(goingForward ? "--- SWITCHING FORWARD ---" : "--- SWITCHING BACKWARD ---");
-      digitalWrite(motorA1, LOW);
-      digitalWrite(motorA2, LOW);
-      // Motor B Forward
-      digitalWrite(motorB1, LOW);
-      digitalWrite(motorB2, LOW);
-    }
-
-    if (goingForward) {
-      // Motor A Forward
-      digitalWrite(motorA1, HIGH);
-      digitalWrite(motorA2, LOW);
-      // Motor B Forward
-      digitalWrite(motorB1, HIGH);
-      digitalWrite(motorB2, LOW);
-    } else {
-      // Motor A Backward
-      digitalWrite(motorA1, LOW);
-      digitalWrite(motorA2, HIGH);
-      // Motor B Backward
-      digitalWrite(motorB1, LOW);
-      digitalWrite(motorB2, HIGH);
-    }
-
-    // Write speed to Enable pins
-    analogWrite(enA, currentSpeed);
+  if (active != 0) {
+    error = (float)sum / active;
+  } else {
+    if (previous_error < 0)
+      error = -5;
+    else
+      error = 5;
   }
+}
+
+void calculate_pid() {
+  P = error;
+  // I = I + error;
+  // I = constrain(I, -50, 50);
+  D = error - previous_error;
+  PID_value = (Kp * P) + (Kd * D);
+  previous_error = error;
+}
+
+float SteeringAngle() {
+  angle = PID_value;
+  angle = constrain(angle, -maxSteeringAngle, maxSteeringAngle);
+  return angle;
 }
